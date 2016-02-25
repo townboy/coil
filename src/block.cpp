@@ -182,10 +182,14 @@ bool Block::IsEnd() {
 
 //从该点进行探索
 void Block::StatusInside(int now_x, int now_y, int old_dir) {
+
+    //std::cout << "depth" << stack_.size() << std::endl;
     status_node_count_ += 1;
 
+    /*
     if (true == IsHash(now_x, now_y, old_dir))
         return ;
+    */
     if (true == IsConnectCut(now_x, now_y))
         return ;
 
@@ -233,7 +237,8 @@ void Block::StatusInside(int now_x, int now_y, int old_dir) {
             }
 
             //如果走到底是墙 保存状态继续拐
-            if (WALL == result)
+            //if (WALL == result)
+            if (false == color_point.empty())
             {
                 //走过的路径添加进去
                 stack_[stack_.size() - 1].path_.push_back(dir);
@@ -251,9 +256,18 @@ void Block::StatusInside(int now_x, int now_y, int old_dir) {
                 //恢复现场
                 SetToSelf(color_point);
             }
-            //如果走到底是key point StatusOutside()
-            else 
-            {
+            //如果走到底是key point StatusOutside() 必须要走到边缘才能走出去
+            if (WALL != result && true == color_point.empty()) {
+
+                //判断之前有没有从该点出去过
+                size_t index = 1;
+                for (; index < stack_.size(); index ++)
+                    if (stack_[index].type_ == ActionOut && stack_[index].key_point_ == result)
+                        break;
+                if (index != stack_.size())
+                    continue;
+                
+                //从该点出去 
                 Action outside_action ;
 
                 outside_action.color_ = this->color_;
@@ -285,6 +299,7 @@ void Block::StatusInside(int now_x, int now_y, int old_dir) {
 
                 if (-1 != old_dir && dir != old_dir && true == forward_is_keypoint)
                     stack_[stack_.size() - 1].requirement_.pop_back();
+
             }
         }
     }
@@ -309,21 +324,25 @@ int Block::IsWallOrKeypoint(int x, int y, int dir) {
 
 void Block::OnFindSolution() {
     //把解直接记录 分两种类型进行记录
-    if (ActionStart == stack_[0].type_)
+    if (ActionStart == stack_[0].type_) {
+        /*
+        std::cout << "Start Display One Solution" << std::endl << std::endl << std::endl;
+        for (size_t i = 0; i < stack_.size(); i ++) {
+            stack_[i].Display();
+        }
+        std::cout << "End Display One Solution" << std::endl << std::endl << std::endl;
+        */
         head_start.push_back(stack_);
+    }
     else
         head_outside.push_back(stack_);
 
-    /*
-    std::cout << "Start Display One Solution" << std::endl << std::endl << std::endl;
-    for (size_t i = 0; i < stack_.size(); i ++) {
-        stack_[i].Display();
-    }
-    std::cout << "End Display One Solution" << std::endl << std::endl << std::endl;
-    */
 }
 
 void Block::StatusStart() {
+    is_hash_sum_ = 0;
+    is_hash_succ_ = 0;
+
     for (int i = 0; i < whole_map_->x_; i ++) 
         for (int f = 0; f < whole_map_->y_; f ++) {
             if (SELF != color_map_[i][f])
@@ -342,15 +361,21 @@ void Block::StatusStart() {
             stack_.push_back(action_start);
             color_map_[i][f] = WALL;
 
+            printf("[MAKE ANSWER] start find solution start from (%d, %d)\n", i, f);
             StatusInside(i, f, -1);
 
             color_map_[i][f] = SELF;
             stack_.pop_back();
+
+            hash_map_.clear();
+
+            //printf("[Calculate] IsHash() %lf\n", 1 - 1.0 * is_hash_succ_ /is_hash_sum_ );
         }
 }
 
 std::vector< std::vector<Action> > Block::FindSolutionStartHere() {
     StatusStart();
+    printf("[DEBUG] block %d find %d start solution\n", color_, head_start.size());
     return head_start;
 }
 
@@ -530,18 +555,28 @@ bool Block::IsConnectCut(int now_x, int now_y) {
 }
 
 bool Block::IsHash(int now_x, int now_y, int dir) {
+
+    is_hash_sum_ += 1;
+
     std::string key;
     for (int i = 0; i < whole_map_->x_; i ++)
         for (int f = 0; f < whole_map_->y_; f ++)
             key += (WALL == color_map_[i][f] ? "1" : "0");
 
-    char info[256];
+    char info[128];
+    for (size_t i = 0; i < stack_.size(); i ++) {
+        snprintf(info, sizeof(info), "%d%5d%5d%5d", stack_[i].type_, stack_[i].key_point_, 
+                stack_[i].x_, stack_[i].y_);
+        key += info;
+    }
+
     snprintf(info, sizeof(info), "%5d%5d%2d", now_x, now_y, dir);
     key += info;
 
     std::unordered_map<std::string, bool> ::iterator it = hash_map_.find(key);
     if (hash_map_.end() != it)
         return true;
+    is_hash_succ_ += 1;
     hash_map_[key] = true;
     return false;
 }

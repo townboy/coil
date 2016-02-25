@@ -9,6 +9,7 @@
 #include <stack>
 #include <algorithm>
 #include <list>
+#include <map>
 
 #define MAX_GRID  100
 #define MAX_BLOCK 1000
@@ -91,8 +92,6 @@ public:
     std::vector< std::vector <Action > > FindNextSolution(std::list<Action> path);
 
 private:
-    //搜索了多少状态
-    int status_node_count_;
 
     //进行联通性剪纸 true代表就用进行搜索了
     bool IsConnectCut(int now_x, int now_y);
@@ -121,6 +120,12 @@ private:
     bool IsHash(int now_x, int now_y, int dir);
 
 private:
+    //搜索了多少状态
+    int status_node_count_;
+    //
+    int is_hash_sum_;
+    int is_hash_succ_;
+    
     //整张地图的信息
     Map *whole_map_;
     //当前的颜色 好像没有什么用
@@ -145,8 +150,12 @@ public:
     int MarkKeyPoint();
 
     bool ColorTheMap();
-
+    //进行染色
     void ColorBlock(int now_x, int now_y, int color);
+    //将分割同一个块的key point 变成块
+    void ColorCheck();
+    
+    void CheckDFS(int now_x, int now_y, std::map<int, int> &adjust_block);
     //进行显示染色分块之后的图
     void DisplayColorMap();
     //进行显示 原始数据
@@ -159,6 +168,8 @@ public:
     bool IsPointColor(int aim_x, int aim_y);
     //最后的生成路径
     bool MakeAnswer();
+    //加上连通性剪纸
+    bool IsConnectCut();
     //进行搜索
     bool DFSPath();
     //是否结束
@@ -172,7 +183,7 @@ public:
     std::vector < std::pair<int, int> > SetToWall(int start_x, int start_y, 
             std::vector<int> path);
     void SetToColor(std::vector< std::pair<int, int> > points, int color);
-
+    //进行hash状态
     bool IsHash(int now_x, int now_y, int dir);
 
 public:

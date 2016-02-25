@@ -39,9 +39,9 @@ def run(level):
     x, y, map_str = TurnMapInfo2XYMap(map_info)
 
     subprocess.call('./src/coil ' + x + ' ' + y + ' ' +  map_str, shell = True)
+    answer = MakeAnswer()
 
     #answer = solver.main(map_info)
-    answer = MakeAnswer()
 
     print '===================================================='
     if True == solver_checker.run(map_info, answer):
@@ -60,7 +60,11 @@ if __name__ == '__main__':
         run(sys.argv[1])
     else:
         for i in range(int(sys.argv[1]), int(sys.argv[2]) + 1 ):
+
             if False == run(str(i)):
                 print '!!!!!!!!!!!!!!!!!!!!'
                 print 'Solve level', i, 'FAIL FAIL FAIL FAIL'
                 print '!!!!!!!!!!!!!!!!!!!!'
+                break
+
+

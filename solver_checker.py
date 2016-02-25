@@ -116,6 +116,7 @@ def run(map_info, answer):
         # get this step direction
         delta_x = util.direct_vector[ util.char2direct[one_dir] ]['x']
         delta_y = util.direct_vector[ util.char2direct[one_dir] ]['y']
+        #map_instance.display()
 
         if False == map_instance.goto(delta_x, delta_y):
             return False

@@ -5,10 +5,12 @@
 #include "core.h"
 #include <stdio.h>
 #include <sys/time.h>
+#include <map>
+#include <queue>
 
 Map::Map(int x, int y, char *map) : x_(x), y_(y) {
     std::cout << "x " << x << " y " << y << std::endl;
-    std::cout << map << std::endl;
+ //   std::cout << map << std::endl;
     int len = strlen(map);
     if (len != x * y)
         std::cout << "initialize failed" << std::endl;
@@ -45,6 +47,8 @@ bool Map::IsPointOccupy(int aim_x, int aim_y) {
     return raw_info_[aim_x][aim_y];
 }
 
+//如果该点度小于2 那么就是key point
+//将该点填充，如果分割成两个块,那么还是key point
 int Map::MarkKeyPoint()
 {
     key_count_ = 0;
@@ -67,17 +71,70 @@ int Map::MarkKeyPoint()
 
             }
 
-            if (2 != empty_direction.size())
+            //度小于2
+            if (3 > empty_direction.size()) {
+                key_point_info_[i][f] = true;
+                color_info_[i][f] = key_count_ ++;
                 continue;
+            }
 
-            /*
-            if (1 == (empty_direction[0] + empty_direction[1]) % 2)
-                continue;
-            */
+            //判断连通性 肯定不会是靠边的点
+           
+            int nine_grid[3][3];
 
-            // this point is key point
-            key_point_info_[i][f] = true;
-            color_info_[i][f] = key_count_ ++;
+            bool push_flag = false;
+            std::queue<std::pair<int, int> > bfs_que;
+            
+            for (int g = 0; g < 3; g++) {
+                int correct_x = i - 1 + g;
+
+                for (int h = 0; h < 3; h ++) {
+                    int correct_y = f - 1 + h;
+                    
+                    if (correct_x < 0 || correct_x >= x_ || correct_y < 0 || correct_y >= y_)
+                        nine_grid[g][h] = -1;
+                    else
+                        nine_grid[g][h] = true == raw_info_[correct_x][correct_y] ? -1 : 0;
+
+                    if (WALL != nine_grid[g][h] && false == push_flag) {
+                        bfs_que.push(std::make_pair(g, h));
+                        push_flag = true;
+                    }
+                }
+            }
+
+            nine_grid[1][1] = WALL;
+
+            while(false == bfs_que.empty()) {
+                int now_x = bfs_que.front().first;
+                int now_y = bfs_que.front().second;
+                bfs_que.pop();
+              
+                for (int dir = 0; dir < 4; dir ++) {
+                    int next_x = now_x + direction[dir][0];
+                    int next_y = now_y + direction[dir][1];
+
+                    if (next_x < 0 || next_x > 2 || next_y < 0 || next_y > 2)
+                        continue;
+
+                    if (WALL != nine_grid[next_x][next_y]) {
+                        nine_grid[next_x][next_y] = WALL;
+                        bfs_que.push(std::make_pair(next_x, next_y));
+                    }
+                }
+            }
+
+            bool empty_flag = false;
+            for (int g = 0; g < 3; g ++)
+                for (int h = 0; h < 3; h ++)
+                    if (WALL != nine_grid[g][h])
+                        empty_flag = true;
+            
+            //还存在被分割的。该点是key point
+            if (true == empty_flag) {
+                key_point_info_[i][f] = true;
+                color_info_[i][f] = key_count_ ++;
+            }
         }
     
     block_count_ = key_count_;
@@ -153,6 +210,44 @@ bool Map::ColorTheMap() {
     return true;
 }
 
+void Map::ColorCheck() {
+    for (int i = 0; i < x_; i ++)
+        for (int f = 0; f < y_; f ++) {
+            if (WALL == color_info_[i][f] || color_info_[i][f] >= key_count_) 
+                continue;
+            //是 key point
+            std::map<int, int> adjust_block;
+            adjust_block.clear();
+
+            CheckDFS(i, f, adjust_block);
+
+            if (1 == adjust_block.size() )
+                color_info_[i][f] = adjust_block.begin()->first;
+        }
+}
+
+void Map::CheckDFS(int now_x, int now_y, std::map<int, int> &adjust_block) {
+    int key_point = color_info_[now_x][now_y];
+    color_info_[now_x][now_y] = WALL;
+
+    for (int dir = 0; dir < 4; dir ++) {
+        int next_x = now_x + direction[dir][0];
+        int next_y = now_y + direction[dir][1];
+
+        if (next_x < 0 || next_x >= x_ || next_y < 0 || next_y >= y_)
+            continue;
+
+        //是块内
+        if (color_info_[next_x][next_y] >= key_count_)
+            adjust_block[color_info_[next_x][next_y]] = 1;
+
+        else if (WALL < color_info_[next_x][next_y])
+            CheckDFS(next_x, next_y, adjust_block);
+    }
+
+    color_info_[now_x][now_y] = key_point;
+}
+
 void Map::FindSolutionInBlock() {
     for (int i = key_count_; i < block_count_; i ++) {
         block_list_[i] = new Block(i, this);
@@ -160,8 +255,6 @@ void Map::FindSolutionInBlock() {
 
         block_list_[i]->FindSolutionOutside();
     }
-
-    return ;
 }
 
 bool Map::IsSearchFinish() {
@@ -219,6 +312,7 @@ void Map::GenerateAnswer() {
     std::vector<int> path;
 
     for (std::list< Action >::iterator it = stack_.begin(); it != stack_.end(); it ++) {
+        //it->Display();
 
         //如果是key point 当中的Action
         if (ActionNormal == it->type_) {
@@ -280,11 +374,55 @@ bool Map::IsHash(int now_x, int now_y, int dir) {
     return false;
 }
 
+bool Map::IsConnectCut() {
+    int backup_color[MAX_GRID][MAX_GRID];
+    memcpy(backup_color, color_info_, sizeof(color_info_));
+
+    std::queue<std::pair<int, int> > que;
+    bool flag = false;
+    for (int i = 0; i < x_; i ++)
+        for (int f = 0; f < y_; f ++)
+            if (false == flag && WALL != backup_color[i][f]) {
+                flag = true;
+                backup_color[i][f] = WALL;
+                que.push(std::make_pair(i, f));
+            }
+
+    while (false == que.empty()) {
+        int now_x = que.front().first;
+        int now_y = que.front().second;
+        que.pop();
+
+        for (int dir = 0; dir < 4; dir ++) {
+            int next_x = now_x + direction[dir][0];
+            int next_y = now_y + direction[dir][1];
+
+            if (next_x < 0 || next_x >= x_ || next_y < 0 || next_y >= y_)
+                continue;
+
+            if(WALL == backup_color[next_x][next_y])
+                continue;
+
+            backup_color[next_x][next_y] = WALL;
+            que.push(std::make_pair(next_x, next_y));
+        }
+    }
+
+    //还有点不能被染色到，该剪纸了
+    for (int i = 0; i < x_; i ++)
+        for (int f = 0; f < y_; f ++)
+            if (WALL != backup_color[i][f]) {
+                std::cout << "successdfjdkfjkdjfdjf" << std::endl;
+                return true;
+            }
+    return false;
+}
+
 //还是采用精确枚举，能找到每一个Action
 bool Map::DFSPath() {
 
     status_node_count_ += 1;
-    if (status_node_count_ % 1000 == 0) {
+    if (status_node_count_ % 10000 == 0) {
         timeval now;
         gettimeofday(&now, NULL);
         double cost = now.tv_sec - start_.tv_sec + (now.tv_usec - start_.tv_usec) / 1000000.0;
@@ -293,6 +431,9 @@ bool Map::DFSPath() {
                status_node_count_, status_node_count_ / cost);
         printf("[INFO] MakeAnswer cost %lf second\n", cost);
     }
+
+    if (true == IsConnectCut())
+        return false;
 
     //DisplayColorMap();
 
@@ -557,10 +698,13 @@ bool Map::MakeAnswer() {
     for (int color = key_count_; color < block_count_; color ++) {
         std::vector< std::vector< Action > > head_start = block_list_[color]->FindSolutionStartHere();
         
-        //遍历所有起点
+        //遍历所有起点 注意要满足requirement
         for (size_t f = 0; f <  head_start.size(); f ++) {
             //加载现场
             Action choose = head_start[f][0];
+            if (false == choose.requirement_.empty())
+                continue;
+
             std::vector< std::pair<int, int> > points = SetToWall(choose.x_, choose.y_, choose.path_);
             block_action_[color].push_back(choose);
             stack_.push_back(choose);
@@ -636,9 +780,12 @@ int main(int argc, char **argv) {
 
     Map *map = new Map(atoi(argv[1]), atoi(argv[2]), argv[3]);
 
-    map->Display();
+ //   map->Display();
     map->MarkKeyPoint();
     map->ColorTheMap();
+ //   map->DisplayColorMap();
+
+    map->ColorCheck();
     map->DisplayColorMap();
 
     map->FindSolutionInBlock();
