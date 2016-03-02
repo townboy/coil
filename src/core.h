@@ -70,6 +70,8 @@ public:
     std::vector< int > path_;
     //这次Action需要覆盖哪几个点才能满足
     std::vector< int > requirement_;
+    //内部需要覆盖哪几个点
+    std::vector<std::pair<int, int> > out_requirement_;
 };
 
 class Block {
@@ -84,10 +86,8 @@ public:
     //预处理从内部开始的solution
     std::vector< std::vector<Action> > FindSolutionStartHere();
 
-    //暂时没有调用
     //给一个解方案，判断在此时的情况下是否能将该块填满
-    bool IsSolutionFinish(std::vector< Action> solution);
-
+    bool IsSolutionFinish(std::list< Action> solution, std::vector<Action>* out);
     //根据现在的解决策略 找到接下去的解
     std::vector< std::vector <Action > > FindNextSolution(std::list<Action> path);
 
@@ -141,6 +141,9 @@ private:
     std::unordered_map<std::string, bool> hash_map_;
     //搜索栈 用来记录路径
     std::vector<Action> stack_;
+
+    //已经覆盖的点
+    std::vector<std::pair<int, int> > out_requirement_;
 };
  
 class Map {

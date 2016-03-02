@@ -47,6 +47,8 @@ void Block::Display() {
 void Block::FindSolutionOutside() {
     //将状态置为在外状态
     
+    out_requirement_.clear();
+    
     struct timeval start, now;
 
     gettimeofday(&start, NULL);
@@ -130,6 +132,7 @@ void Block::SetToSelf(std::vector<std::pair<int, int> >color_point) {
         int x = color_point[i].first;
         int y = color_point[i].second;
         color_map_[x][y] = SELF; 
+        out_requirement_.pop_back();
     }
 }
 
@@ -142,6 +145,7 @@ std::vector<std::pair<int, int> > Block::SetToWall(int x, int y, int dir) {
     while (true == IsInsidePoint(next_x, next_y)) {
         color_map_[next_x][next_y] = WALL;
         color_point.push_back(std::make_pair(next_x, next_y));
+        out_requirement_.push_back(std::make_pair(next_x, next_y));
 
         next_x += direction[dir][0];
         next_y += direction[dir][1];
@@ -197,6 +201,7 @@ void Block::StatusInside(int now_x, int now_y, int old_dir) {
     if (true == IsEnd()) {
         Action end_action;
         end_action.type_ = ActionEnd;
+        end_action.color_ = this->color_;
         stack_.push_back(end_action);
 
         //找到一个解了
@@ -278,6 +283,7 @@ void Block::StatusInside(int now_x, int now_y, int old_dir) {
                 outside_action.x_ = end_x;
                 outside_action.y_ = end_y;
                 outside_action.path_.push_back(dir);
+                outside_action.out_requirement_ = this->out_requirement_;
 
                 if (-1 != old_dir && dir != old_dir && true == forward_is_keypoint)
                     stack_[stack_.size() - 1].requirement_.push_back(color_map_[forward_x][forward_y]);
@@ -360,10 +366,12 @@ void Block::StatusStart() {
             
             stack_.push_back(action_start);
             color_map_[i][f] = WALL;
+            out_requirement_.push_back(std::make_pair(i, f));
 
             printf("[MAKE ANSWER] start find solution start from (%d, %d)\n", i, f);
             StatusInside(i, f, -1);
 
+            out_requirement_.pop_back();
             color_map_[i][f] = SELF;
             stack_.pop_back();
 
@@ -374,6 +382,7 @@ void Block::StatusStart() {
 }
 
 std::vector< std::vector<Action> > Block::FindSolutionStartHere() {
+    out_requirement_.clear();
     StatusStart();
     printf("[DEBUG] block %d find %d start solution\n", color_, head_start.size());
     return head_start;
@@ -384,7 +393,10 @@ void Action::Display() {
     std::cout << "Display Action" << std::endl;
     std::cout << "======================" << std::endl;
 
-    if (ActionIn == type_) {
+    if (ActionNormal == type_) {
+        std::cout << "TYPE Normal  Color: " << color_ << "  x: " << x_ << "  y: " << y_ << " dir: " << dir_; 
+    }
+    else if (ActionIn == type_) {
         std::cout << "TYPE  IN  Key Point: " << key_point_ << "  x: " << x_ << "  y: " << y_; 
     }
     else if (ActionOut == type_) {
@@ -411,17 +423,17 @@ void Action::Display() {
     std::cout << std::endl;
 }
 
-bool Block::IsSolutionFinish(std::vector< Action > solution) {
+bool Block::IsSolutionFinish(std::list< Action > solution, std::vector< Action > *out) {
     //至少要有两个Action 并且是偶数个
     if (true == solution.empty() || 0 != solution.size() % 2)
         return false;
 
     //判断这个块是否是全图的起点
     std::vector< std::vector< Action> > head;
-    if (ActionStart == solution[0].type_) {
+    if (ActionStart == solution.begin()->type_) {
         head = head_start;
     }
-    if (ActionIn == solution[0].type_) {
+    if (ActionIn == solution.begin()->type_) {
         head = head_outside;
     }
 
@@ -429,54 +441,94 @@ bool Block::IsSolutionFinish(std::vector< Action > solution) {
         //Action数量不一样 肯定不行
         if (solution.size() != head[i].size())
             continue;
-        for (size_t f = 0; f < head[i].size(); f ++) {
-            if (false == head[i][f].IsEqual(solution[i]) )
-                return false;
+
+        size_t index = 0;
+        std::list<Action> ::iterator it = solution.begin();
+        for (; index < head[i].size(); index ++, it ++) {
+            if (false == head[i][index].IsEqual(*it) )
+                break;
+        }
+        if (index == head[i].size()) {
+            if (NULL != out) {
+                out->clear();
+                for (size_t f = 0; f < head[i].size(); f ++) {
+                    out->push_back(head[i][f]);
+                }
+            }
+            return true;
         }
     }
     
-    return true;
+    return false;
 }
 
+//对象是具体解，传入的foo是枚举量
 bool Action::IsEqual( Action foo) {
     if (type_ != foo.type_)
         return false;
-    
-    //如果都是起点的话，比较坐标
-    if (ActionStart == type_) {
-       if (x_ != foo.x_ || y_ != foo.y_)
-           return false;
-    }
-    //如果是In 和Out，比较坐标和key point
-    else if (ActionIn == type_ || ActionOut == type_) {
-       if (x_ != foo.x_ || y_ != foo.y_)
-           return false;
-     
-       if (key_point_ != foo.key_point_)
-           return false;
-    }
 
-    //比较path
-    if (path_.size() != foo.path_.size())
+    //比较颜色
+    if (color_ != foo.color_)
         return false;
 
-    for (size_t i = 0; i < path_.size(); i ++) {
-        if (path_[i] != foo.path_[i])
-            return false;
-    }
+    std::unordered_map<int, bool> requirement_hash;
 
-    /*
+    for (size_t i = 0; i < foo.requirement_.size(); i ++)
+        requirement_hash[foo.requirement_[i]] = true;
+
     //比较requirement 能不能被满足
     for (size_t i = 0; i < requirement_.size(); i ++) {
-        std::vector<int>::iterator it = std::find(foo.requirement_.begin(), 
-                foo.requirement_.end(), requirement_[i]);
-        if (foo.requirement_.end() == it)
+        std::unordered_map<int, bool>::iterator it = requirement_hash.find(requirement_[i]);
+        if (requirement_hash.end() == it)
             return false;
     }
-    */
 
-    //如果都能满足
-    return true;
+    std::map<std::pair<int, int>, bool> out_requirement_hash;
+
+    for (size_t i = 0; i < out_requirement_.size(); i ++)
+        out_requirement_hash[out_requirement_[i]] = true;
+
+    //比较out_requirement 能不能被满足
+    for (size_t i = 0; i < foo.out_requirement_.size(); i ++) {
+        std::map<std::pair<int, int>, bool>::iterator it = 
+            out_requirement_hash.find(foo.out_requirement_[i]);
+
+        if (out_requirement_hash.end() == it)
+            return false;
+    }
+    
+    //此时肯定没有key point 被填充
+    if (ActionStart == type_) {
+        if (false == requirement_.empty())
+            return false;
+        return true;
+    }
+
+    if (ActionIn == type_) {
+        if (key_point_ != foo.key_point_)
+            return false;
+        if (dir_ != foo.dir_)
+            return false;
+        if (x_ != foo.x_ || y_ != foo.y_)
+            return false;
+        return true;
+    }
+
+    if (ActionOut == type_) {
+        if (key_point_ != foo.key_point_)
+            return false;
+        if (dir_ != foo.dir_)
+            return false;
+        if (x_ != foo.x_ || y_ != foo.y_)
+            return false;
+        return true;
+    }
+
+    if (ActionEnd == type_) {
+        return true;
+    }
+
+    return false;
 }
 
 std::vector< std::vector < Action> > Block::FindNextSolution(std::list< Action > path) {
@@ -489,21 +541,39 @@ std::vector< std::vector < Action> > Block::FindNextSolution(std::list< Action >
     else 
         head = head_outside;
 
+    std::unordered_map<std::string, int> avail_exit;
+    avail_exit.clear();
+    size_t path_index = path.size();
+
     for (size_t i = 0; i < head.size(); i ++) {
+
+        if (path_index >= head[i].size())
+            continue;
+
+        char exit_hash[128];
+        snprintf(exit_hash, sizeof(exit_hash), "%d%5d%d", head[i][path_index].type_,
+            head[i][path_index].key_point_, head[i][path_index].dir_);
+
+        /*
+        if (avail_exit.end() != avail_exit.find(exit_hash))
+            continue;
+            */
+
         size_t index = 0;
         std::list< Action >::iterator it = path.begin();
-
-        if (path.size() >= head[i].size())
-            continue;
         for (; path.end() != it; it ++, index ++) {
             //现在要求严格相同
-            if (false == it->IsEqual(head[i][index]) )
+            //if (false == it->IsEqual(head[i][index]) )
+            if (false == head[i][index].IsEqual(*it))
                 break;
         }
 
         //走完了 全部相同
-        if (it == path.end())
+        if (it == path.end()) {
             result.push_back(head[i]);
+            avail_exit[exit_hash] = 1;
+        }
+
     }
 
     return result;

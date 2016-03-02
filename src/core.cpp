@@ -257,9 +257,8 @@ void Map::FindSolutionInBlock() {
     }
 }
 
+//根据当前的枚举状态判断是不是能全部块填满
 bool Map::IsSearchFinish() {
-    /*
-    //根据当前的枚举状态判断是不是能全部块填满
     
     //先判断所有的key point要填满
     for (int i = 0; i < x_; i++) 
@@ -272,17 +271,10 @@ bool Map::IsSearchFinish() {
 
     //再判断所有的Block能不能填满
     for (int i = key_count_; i < block_count_; i ++) {
-        if (false == block_list_[i]->IsSolutionFinish(block_action_[i]))
+        if (false == block_list_[i]->IsSolutionFinish(block_action_[i], NULL))
             return false;
     }
-    */
 
-    //直接扫一遍 看是否由未填充
-    for (int i = 0; i < x_; i++) 
-        for (int f = 0; f < y_; f++) {
-            if (color_info_[i][f] != WALL)
-                return false;
-        }
     return true;
 }
 
@@ -307,9 +299,29 @@ void Map::GenerateAnswer() {
     std::cout << "================================================================" << std::endl;
     std::cout << "Find Answer" << std::endl;
     std::cout << "================================================================" << std::endl;
-    std::cout << "x=" << stack_.begin()->x_ << " y=" << stack_.begin()->y_ << std::endl;
 
+    int start_x, start_y;
+    
     std::vector<int> path;
+    int index[MAX_BLOCK];
+    std::vector< Action > answer[MAX_BLOCK];
+
+    memset(index, 0, sizeof(index));
+
+    //拿到解
+    for (int color = key_count_; color < block_count_; color ++) 
+        block_list_[color]->IsSolutionFinish(block_action_[color], &answer[color]);
+
+    if (ActionNormal == stack_.begin()->type_) {
+        start_x = stack_.begin()->x_;
+        start_y = stack_.begin()->y_;
+    }
+    else {
+        start_x = answer[stack_.begin()->color_][0].x_;
+        start_y = answer[stack_.begin()->color_][0].y_;
+    }
+
+    std::cout << "x = " << start_x << " y = " << start_y << std::endl;
 
     for (std::list< Action >::iterator it = stack_.begin(); it != stack_.end(); it ++) {
         //it->Display();
@@ -324,8 +336,9 @@ void Map::GenerateAnswer() {
         }
         //如果是在块当中的Action
         else {
-            for (size_t f = 0; f < it->path_.size(); f ++) {
-                int dir = it->path_[f];
+            int color = it->color_;
+            for (size_t f = 0; f < answer[color][index[color]].path_.size(); f ++) {
+                int dir = answer[color][index[color]].path_[f];
 
                 if (-1 == dir)
                     continue;
@@ -333,6 +346,7 @@ void Map::GenerateAnswer() {
                     continue;
                 path.push_back(dir);
             }
+            index[color] += 1;
         }
     }
 
@@ -345,7 +359,7 @@ void Map::GenerateAnswer() {
     //写入到文件当中
     FILE *file = fopen("answer", "w");
 
-    fprintf(file, "%d\n%d\n", stack_.begin()->x_, stack_.begin()->y_);
+    fprintf(file, "%d\n%d\n", start_x, start_y);
     for (size_t i = 0; i < path.size(); i ++) {
         fprintf(file, "%c", dir2name[path[i]]);
     }
@@ -411,18 +425,19 @@ bool Map::IsConnectCut() {
     //还有点不能被染色到，该剪纸了
     for (int i = 0; i < x_; i ++)
         for (int f = 0; f < y_; f ++)
-            if (WALL != backup_color[i][f]) {
-                std::cout << "successdfjdkfjkdjfdjf" << std::endl;
+            if (WALL != backup_color[i][f])
                 return true;
-            }
     return false;
 }
 
 //还是采用精确枚举，能找到每一个Action
 bool Map::DFSPath() {
 
+    //stack_.rbegin()->Display();
+
     status_node_count_ += 1;
-    if (status_node_count_ % 10000 == 0) {
+    //printf("%d\n", status_node_count_);
+    if (status_node_count_ % 1000 == 0) {
         timeval now;
         gettimeofday(&now, NULL);
         double cost = now.tv_sec - start_.tv_sec + (now.tv_usec - start_.tv_usec) / 1000000.0;
@@ -432,10 +447,6 @@ bool Map::DFSPath() {
         printf("[INFO] MakeAnswer cost %lf second\n", cost);
     }
 
-    if (true == IsConnectCut())
-        return false;
-
-    //DisplayColorMap();
 
     //是否结束
     if ( true == IsSearchFinish()) {
@@ -450,32 +461,33 @@ bool Map::DFSPath() {
     //还在key point
     if (ActionNormal == now.type_) {
 
-        //进行hash
-        //printf("  AAAAAA");
-        if (true == IsHash(now.x_, now.y_, now.dir_)) {
-            return false;
-        }
-
-        int next_x, next_y, ret;
+        int forward_x, forward_y, ret;
         if (-1 != now.dir_) {
-            next_x = now.x_ + direction[now.dir_][0];
-            next_y = now.y_ + direction[now.dir_][1];
-            ret = SearchColor(next_x, next_y);
+            forward_x = now.x_ + direction[now.dir_][0];
+            forward_y = now.y_ + direction[now.dir_][1];
+            ret = SearchColor(forward_x, forward_y);
         }
 
         std::vector<int> available_direction;
 
-        //起点的情况, 或者前方是墙，可以自由选择
-        if (-1 == now.dir_ || WALL == ret) {
+        //起点的情况, 可以自由选择
+        if (-1 == now.dir_) {
             for (int dir = 0; dir < 4; dir++)
                 available_direction.push_back(dir);
         }
-        //只能行走原先方向
-        else 
-            available_direction.push_back(now.dir_);
+        //只能行走原先方向 和周围两个方向 但是有条件
+        else  {
+            for (int dir = -1; dir < 2; dir++)
+                available_direction.push_back( (now.dir_ + dir + 4) % 4);
+        }
 
         for (size_t i = 0; i < available_direction.size(); i ++) {
+
             int dir = available_direction[i];
+
+            //如果原先有方向，且和原先方向不一样并且前方是空的key point 是不能转向的
+            if (-1 != now.dir_ && dir != now.dir_ && (ret > WALL  && ret < key_count_))
+                continue;
 
             int next_x = now.x_ + direction[dir][0];
             int next_y = now.y_ + direction[dir][1];
@@ -485,6 +497,23 @@ bool Map::DFSPath() {
             //是墙， GG
             if (WALL == forward_color)
                 continue;
+
+            //如果原先有方向，且当前和原先方向不一样，并且前方是Block, 需要加out_requirement
+            if (-1 != now.dir_ && dir != now.dir_ && ret >= key_count_) {
+                //如果当前那块都不存在肯定不行
+                if (true == block_action_[ret].empty())
+                    continue;
+                block_action_[ret].rbegin()->out_requirement_.push_back(
+                        std::make_pair(forward_x, forward_y));
+
+                //判断是否有解
+                std::vector< std::vector <Action > > new_solution = 
+                    block_list_[ret]->FindNextSolution(block_action_[ret]);
+                if (true == new_solution.empty()) {
+                    block_action_[ret].rbegin()->out_requirement_.pop_back();
+                    continue;
+                }
+            }
 
             //key point
             if (forward_color < key_count_) {
@@ -512,73 +541,33 @@ bool Map::DFSPath() {
             }
             //进入到块内了
             else {
+                
+                //直接进入
                 int color = color_info_[next_x][next_y];
-                std::vector< std::vector< Action> > next_solution =
-                    block_list_[color]->FindNextSolution(block_action_[color]);
+                Action action_in;
 
-                size_t index = block_action_[color].size();
+                action_in.type_ = ActionIn;
+                action_in.requirement_ = requirement_;
+                action_in.color_ = color;
+                action_in.dir_ = dir;
+                action_in.key_point_ = stack_.rbegin()->color_;
+                action_in.x_ = next_x;
+                action_in.y_ = next_y;
 
-                for (size_t f = 0; f < next_solution.size(); f ++) {
-                    //应该是还未填满 应该不会出现这种情况
-                    if (next_solution[f].size() <= index)
-                        continue;
+                block_action_[color].push_back(action_in);
+                stack_.push_back(action_in);
 
-                    Action choose = next_solution[f][index];
+                if (true == DFSPath())
+                    return true;
 
-                    //进入块内的点都不对，pass
-                    if (choose.x_ != next_x || choose.y_ != next_y)
-                        continue;
-
-                    //进来的 key point 也要相同
-                    if (choose.key_point_ != now.color_)
-                        continue;
-
-                    //判断后继是否合法，包括起始点和requirement
-                    size_t requirement_checker = 0;
-
-                    
-                    for (; requirement_checker < choose.requirement_.size(); requirement_checker ++) {
-                        std::vector<int> ::iterator it = std::find(requirement_.begin(),
-                                requirement_.end(), choose.requirement_[requirement_checker]);
-                        if (requirement_.end() == it) {
-                            break;
-                        }
-                    }
-                    if (requirement_checker < choose.requirement_.size() ) {
-                        continue;
-                    }
-                    
-                    //使用这个Action 需要更新地图上面的点
-                    //肯定不会是ActionStart 节点了, 所以肯定是进入ActionIn
-                    //更新现场
-                    std::vector<std::pair<int, int> > points = SetToWall(choose.x_, choose.y_, 
-                            choose.path_);
-                    stack_.push_back(choose);
-                    block_action_[color].push_back(choose);
-
-                    //choose.Display();
-                    //进行hash
-                    //printf("  BBBB");
-                    if (true == IsHash(points.rbegin()->first ,points.rbegin()->second ,
-                                *choose.path_.rbegin())) {
-                        //还原现场
-                        SetToColor(points, color);
-                        stack_.pop_back();
-                        block_action_[color].pop_back();
-                        continue;
-                    }
-
-                    if (true == DFSPath())
-                        return true;
-
-                    //还原现场
-                    SetToColor(points, color);
-                    stack_.pop_back();
-                    block_action_[color].pop_back();
-
-                }
+                //还原现场
+                stack_.pop_back();
+                block_action_[color].pop_back();
 
             }
+
+            if (-1 != now.dir_ && dir != now.dir_ && ret >= key_count_)
+                block_action_[ret].rbegin()->out_requirement_.pop_back();
         }
 
         return false;
@@ -590,18 +579,41 @@ bool Map::DFSPath() {
     std::vector< std::vector< Action> > next_solution = block_list_[color]->FindNextSolution(
             block_action_[color]);
 
-    //一定是ActionOut 也有可能是ActionEnd  一般情况下只有一个
-    for (size_t i = 0; i < next_solution.size(); i ++) {
+    std::unordered_map<std::string, int> avail_exit;
+    avail_exit.clear();
 
+    for (size_t i = 0; i < next_solution.size(); i ++) {
+        if ((int)next_solution[i].size() <= index)
+            continue;
+
+        char exit_hash[128];
+        snprintf(exit_hash, sizeof(exit_hash), "%d%5d%d", next_solution[i][index].type_, 
+                next_solution[i][index].key_point_, next_solution[i][index].dir_);
+
+        if (avail_exit.end() != avail_exit.find(exit_hash))
+            continue;
+        avail_exit[exit_hash] = 1;
+
+        //for out action, just copy it
         Action choose = next_solution[i][index];
 
-        //如果能够匹配上，这个函数开始的Finish就会结束，所以这里就不用判断了
-        if (ActionEnd == choose.type_) 
+        //检查是否结束
+        if (ActionEnd == choose.type_) {
+            stack_.push_back(choose);
+            block_action_[color].push_back(choose);
+            if(true == IsSearchFinish()) {
+                GenerateAnswer();
+                return true;
+            }
+            block_action_[color].pop_back();
+            stack_.pop_back();
             continue;
+        }
 
         int dir = choose.dir_;
         int next_x = choose.x_ + direction[dir][0];
         int next_y = choose.y_ + direction[dir][1];
+        choose.out_requirement_.clear();
 
         //判断出去的那个点有没有被覆盖
         if (WALL == SearchColor(next_x, next_y))
@@ -663,7 +675,7 @@ bool Map::MakeAnswer() {
     //从key point 开始找解
     for (int i = 0; i < x_; i ++) {
         for (int f = 0; f < y_; f ++) {
-            
+
             if (WALL == color_info_[i][f] || color_info_[i][f] >= key_count_)
                 continue;
 
@@ -696,27 +708,23 @@ bool Map::MakeAnswer() {
 
     //从块内开始找解
     for (int color = key_count_; color < block_count_; color ++) {
-        std::vector< std::vector< Action > > head_start = block_list_[color]->FindSolutionStartHere();
         
-        //遍历所有起点 注意要满足requirement
-        for (size_t f = 0; f <  head_start.size(); f ++) {
-            //加载现场
-            Action choose = head_start[f][0];
-            if (false == choose.requirement_.empty())
-                continue;
+        block_list_[color]->FindSolutionStartHere();
 
-            std::vector< std::pair<int, int> > points = SetToWall(choose.x_, choose.y_, choose.path_);
-            block_action_[color].push_back(choose);
-            stack_.push_back(choose);
+        //加载现场
+        Action choose ;
+        choose.type_ = ActionStart;
+        choose.color_ = color;
 
-            if (true == DFSPath())
-                return true;
+        block_action_[color].push_back(choose);
+        stack_.push_back(choose);
 
-            //恢复现场
-            stack_.pop_back();
-            block_action_[color].pop_back();
-            SetToColor(points, color);
-        }
+        if (true == DFSPath())
+            return true;
+
+        //恢复现场
+        stack_.pop_back();
+        block_action_[color].pop_back();
     }
 
     return false;
@@ -771,7 +779,7 @@ Map::SetToColor(std::vector< std::pair<int, int> > points, int color) {
 
 int main(int argc, char **argv) {
     //用来断点使用
- //   getchar();
+    //getchar();
 
     if (4 != argc) {
         std::cout << "you must input map_str" << std::endl; 
