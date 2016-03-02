@@ -579,13 +579,16 @@ bool Map::DFSPath() {
     std::vector< std::vector< Action> > next_solution = block_list_[color]->FindNextSolution(
             block_action_[color]);
 
+    /*
     std::unordered_map<std::string, int> avail_exit;
     avail_exit.clear();
+    */
 
     for (size_t i = 0; i < next_solution.size(); i ++) {
         if ((int)next_solution[i].size() <= index)
             continue;
 
+        /*
         char exit_hash[128];
         snprintf(exit_hash, sizeof(exit_hash), "%d%5d%d", next_solution[i][index].type_, 
                 next_solution[i][index].key_point_, next_solution[i][index].dir_);
@@ -593,6 +596,7 @@ bool Map::DFSPath() {
         if (avail_exit.end() != avail_exit.find(exit_hash))
             continue;
         avail_exit[exit_hash] = 1;
+        */
 
         //for out action, just copy it
         Action choose = next_solution[i][index];

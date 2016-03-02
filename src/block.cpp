@@ -554,10 +554,8 @@ std::vector< std::vector < Action> > Block::FindNextSolution(std::list< Action >
         snprintf(exit_hash, sizeof(exit_hash), "%d%5d%d", head[i][path_index].type_,
             head[i][path_index].key_point_, head[i][path_index].dir_);
 
-        /*
         if (avail_exit.end() != avail_exit.find(exit_hash))
             continue;
-            */
 
         size_t index = 0;
         std::list< Action >::iterator it = path.begin();
