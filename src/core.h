@@ -12,7 +12,7 @@
 #include <map>
 
 #define MAX_GRID  100
-#define MAX_BLOCK 1000
+#define MAX_BLOCK 2000
 
 //一些常量 -1为墙 -2为块
 const int WALL = -1;
@@ -168,7 +168,7 @@ public:
     
     bool IsPointOccupy(int aim_x, int aim_y);
 
-    bool IsPointColor(int aim_x, int aim_y);
+    int IsPointColor(int aim_x, int aim_y);
     //最后的生成路径
     bool MakeAnswer();
     //加上连通性剪纸
@@ -215,6 +215,7 @@ public:
 
     // 块数据
     Block *block_list_[MAX_BLOCK];
+    int adjust_key_count_[MAX_BLOCK];
 
     //搜索是hash使用
     std::unordered_map<std::string, bool> hash_map_;

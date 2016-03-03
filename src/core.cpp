@@ -136,6 +136,8 @@ int Map::MarkKeyPoint()
                 color_info_[i][f] = key_count_ ++;
             }
         }
+
+    //将超过12个 key point的Block 重新设为可以key point
     
     block_count_ = key_count_;
 
@@ -144,8 +146,14 @@ int Map::MarkKeyPoint()
 
 void Map::ColorBlock(int now_x, int now_y, int color) {
     
-    if (true == IsPointColor(now_x, now_y))
+    int ret = IsPointColor(now_x, now_y);
+    if (-1 == ret)
         return ;
+    if (1 == ret) {
+        adjust_key_count_[color] += 1;
+        return ;
+    }
+
     color_info_[now_x][now_y] = color;
 
     for (int i = 0 ;i < 4; i ++) {
@@ -160,13 +168,15 @@ void Map::ColorBlock(int now_x, int now_y, int color) {
 /* true mean colored
  * fales mean not colored
  */
-bool Map::IsPointColor(int aim_x, int aim_y) {
+int Map::IsPointColor(int aim_x, int aim_y) {
     if (true == IsPointOccupy(aim_x, aim_y) )
-        return true;
+        return -1;
 
     if (-1 == color_info_[aim_x][aim_y])
-        return false;
-    return true;
+        return 0;
+    if (color_info_[aim_x][aim_y] < key_count_)
+        return 1;
+    return -1;
 }
 
 void Map::DisplayColorMap() {
@@ -196,10 +206,11 @@ void Map::DisplayColorMap() {
 
 
 bool Map::ColorTheMap() {
+    memset(adjust_key_count_, 0, sizeof(adjust_key_count_));
 
     for (int i = 0 ;i < x_; i ++)
         for (int f = 0 ;f < y_; f ++) {
-            if (true == IsPointColor(i, f))
+            if (0 != IsPointColor(i, f))
                 continue;
 
             ColorBlock(i, f, block_count_);
@@ -211,6 +222,45 @@ bool Map::ColorTheMap() {
 }
 
 void Map::ColorCheck() {
+
+    std::vector<std::pair<int, int> > point_in_block[MAX_BLOCK];
+
+    for (int i = 0; i < x_; i ++) 
+        for (int f = 0; f < y_; f ++) {
+            if (color_info_[i][f] >= key_count_)
+                point_in_block[color_info_[i][f]].push_back(std::make_pair(i, f));
+        }
+
+    int old_key_count = key_count_;
+
+    //把key point 多的 变为key point
+    for(int i = key_count_; i < block_count_; i ++) {
+        //阈值
+        if (18 < adjust_key_count_[i]) {
+            for (int f = 0; f < x_; f ++)
+                for (int g = 0; g < y_; g ++)
+                    if (i == color_info_[f][g]) {
+                        color_info_[f][g] = key_count_;
+                        key_count_ += 1;
+                    }
+            point_in_block[i].clear();
+        }
+    }
+    
+    int old_block_count = block_count_;
+    block_count_ = key_count_;
+    for(int i = old_key_count; i < old_block_count; i ++) {
+        if (true == point_in_block[i].empty())
+            continue;
+
+        for (size_t f = 0; f < point_in_block[i].size(); f ++)
+            color_info_[point_in_block[i][f].first][point_in_block[i][f].second] =
+                block_count_;
+        block_count_ += 1;
+    }
+
+    //DisplayColorMap();
+
     for (int i = 0; i < x_; i ++)
         for (int f = 0; f < y_; f ++) {
             if (WALL == color_info_[i][f] || color_info_[i][f] >= key_count_) 
@@ -227,25 +277,36 @@ void Map::ColorCheck() {
 }
 
 void Map::CheckDFS(int now_x, int now_y, std::map<int, int> &adjust_block) {
-    int key_point = color_info_[now_x][now_y];
-    color_info_[now_x][now_y] = WALL;
+    int backup_color[MAX_GRID][MAX_GRID];
+    memcpy(backup_color, color_info_, sizeof(color_info_));
 
-    for (int dir = 0; dir < 4; dir ++) {
-        int next_x = now_x + direction[dir][0];
-        int next_y = now_y + direction[dir][1];
+    std::queue<std::pair<int, int> > que;
+    que.push(std::make_pair(now_x, now_y));
+    backup_color[now_x][now_y] = WALL;
 
-        if (next_x < 0 || next_x >= x_ || next_y < 0 || next_y >= y_)
-            continue;
+    while (false == que.empty()) {
+        now_x = que.front().first;
+        now_y = que.front().second;
+        que.pop();
 
-        //是块内
-        if (color_info_[next_x][next_y] >= key_count_)
-            adjust_block[color_info_[next_x][next_y]] = 1;
+        for (int dir = 0; dir < 4; dir ++) {
 
-        else if (WALL < color_info_[next_x][next_y])
-            CheckDFS(next_x, next_y, adjust_block);
+            int next_x = now_x + direction[dir][0];
+            int next_y = now_y + direction[dir][1];
+
+            if (next_x < 0 || next_x >= x_ || next_y < 0 || next_y >= y_)
+                continue;
+
+            //是块内
+            if (backup_color[next_x][next_y] >= key_count_) {
+                adjust_block[color_info_[next_x][next_y]] = 1;
+            }
+            else if (WALL < backup_color[next_x][next_y]) {
+                backup_color[next_x][next_y] = WALL;
+                que.push(std::make_pair(next_x, next_y));
+            }
+        }
     }
-
-    color_info_[now_x][now_y] = key_point;
 }
 
 void Map::FindSolutionInBlock() {
@@ -437,7 +498,7 @@ bool Map::DFSPath() {
 
     status_node_count_ += 1;
     //printf("%d\n", status_node_count_);
-    if (status_node_count_ % 1000 == 0) {
+    if (status_node_count_ % 10000 == 0) {
         timeval now;
         gettimeofday(&now, NULL);
         double cost = now.tv_sec - start_.tv_sec + (now.tv_usec - start_.tv_usec) / 1000000.0;
@@ -460,6 +521,11 @@ bool Map::DFSPath() {
 
     //还在key point
     if (ActionNormal == now.type_) {
+
+        /*
+        if (true == IsHash(now.x_, now.y_, now.dir_))
+            return false;
+        */
 
         int forward_x, forward_y, ret;
         if (-1 != now.dir_) {
@@ -713,6 +779,7 @@ bool Map::MakeAnswer() {
     //从块内开始找解
     for (int color = key_count_; color < block_count_; color ++) {
         
+        hash_map_.clear();
         block_list_[color]->FindSolutionStartHere();
 
         //加载现场
@@ -794,10 +861,13 @@ int main(int argc, char **argv) {
 
  //   map->Display();
     map->MarkKeyPoint();
+ //   std::cout << " mark key point finish" << std::endl;
     map->ColorTheMap();
+  //  std::cout << " color the map finish" << std::endl;
  //   map->DisplayColorMap();
 
     map->ColorCheck();
+  //  std::cout << " color check finish" << std::endl;
     map->DisplayColorMap();
 
     map->FindSolutionInBlock();
