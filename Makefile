@@ -1,10 +1,10 @@
 .PHONY: all clean all
 
 debug:
-	g++ -fdiagnostics-color=auto -std=c++11 -g src/core.cpp src/block.cpp -o src/coil
+	g++ -std=c++17 -DDEBUG -g -ggdb core.cpp -o coil
 
 all: 
-	g++ -fdiagnostics-color=auto -std=c++11 -o2 src/core.cpp src/block.cpp -o src/coil
+	g++ -std=c++17 -O2 core.cpp -o coil
 
 clean:
 	rm -f src/coil
