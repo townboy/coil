@@ -17,6 +17,7 @@
 
 int width, height;
 std::vector<std::vector<int>> map_;
+std::vector<std::vector<int>> isKey;
 
 /* 这是题目的格式
 var width = 5; var height = 3; var boardStr = "......X......X."
@@ -48,8 +49,23 @@ void parse_mapstr(std::string map_str) {
 	}
 }
 
+void display_keymap() {
+	for(auto i = 0; i < height + 2; i ++) {
+		for (auto f = 0; f < width + 2; f ++) {
+			if (map_[i][f])
+				std::cout << '#';
+			else if (isKey[i][f])
+				std::cout << 'k';
+			else 
+				std::cout << '.';
+		}
+		std::cout << std::endl;
+	}
+	std::cout << std::endl;
+}
+
 void display_map(std::vector<std::vector<int>> map) {
-	std::cout.setf(std::ios_base::hex, std::ios_base::basefield);
+	//std::cout.setf(std::ios_base::hex, std::ios_base::basefield);
 	for(auto i = 0; i < height + 2; i ++) {
 		for (auto f = 0; f < width + 2; f ++) {
 			std::cout.width(4);
@@ -58,16 +74,14 @@ void display_map(std::vector<std::vector<int>> map) {
 		std::cout << std::endl;
 	}
 	std::cout << std::endl;
-	std::cout.unsetf(std::ios_base::hex);
+	//std::cout.unsetf(std::ios_base::hex);
 }
-
-std::vector<std::vector<int>> degree;
 
 std::array<std::array<int, 2>, 4> dir{-1, 0, 0, 1, 1, 0, 0, -1};
 std::array<std::string, 4> dir_name{"U", "R", "D", "L"};
 
 int twoCount = 0;
-constexpr int blockStart = 0x700;
+constexpr int blockStart = 700;
 int greaterTwoCount = blockStart;
 
 std::vector<std::vector<int>> id;
@@ -75,27 +89,60 @@ std::vector<std::vector<int>> id;
 void split_block() {
 	//init for id and degree;
 	std::vector<int> emptyWidth(width + 2, 0);
-	for (auto i = 0; i < height + 2; i++)
-		degree.push_back(emptyWidth);
+	std::vector<int> negaWidth(width + 2, -1);
 
 	for (auto i = 0; i < height + 2; i++)
-		id.push_back(emptyWidth);
+		id.push_back(negaWidth);
 
-	// caculate degree;
+	for (auto i = 0; i < height + 2; i++)
+		isKey.push_back(emptyWidth);
+
+	// caculate key point
+	/*  一共八种情况
+	#K#
+
+	#
+	K
+	#
+
+	#K.    .K#
+	..#    #..
+
+	#.     .#
+	K.     K.
+	.#     #.
+
+	#..    ..#
+	.K.    .K.
+	..#    #..
+	*/
+	constexpr std::array<std::pair<int, int>, 16> keyPointFeature  {{{0, -1}, {0, 1},
+																	{-1, 0}, {1, 0},
+																	{0, -1}, {1, 1},
+																	{1, -1}, {0, 1},
+																	{-1, 0}, {1, 1},
+																	{-1, 1}, {1, 0},
+																	{-1,-1}, {1, 1},
+																	{-1, 1}, {1,-1}}};
+
+	//mark keyPoint
 	for (auto i = 1; i <= height; i++) {
 		for (auto f = 1; f <= width; f++) {
-			if (!map_[i][f]) {
-				for (auto d : dir) {
-					auto new_x = i + d[0];
-					auto new_y = f + d[1];
-					if (!map_[new_x][new_y])
-						degree[i][f] ++;
+			for (auto ki = 0; ki < 16; ki += 2) {
+				auto nx0 = i + keyPointFeature[ki].first;
+				auto ny0 = f + keyPointFeature[ki].second;
+				auto nx1 = i + keyPointFeature[ki+1].first;
+				auto ny1 = f + keyPointFeature[ki+1].second;
+
+				if (map_[nx0][ny0] && map_[nx1][ny1]) {
+					isKey[i][f] = 1;
 				}
 			}
 		}
 	}
+	display_keymap();
 
-	auto bfs = [](int x, int y, bool equalTwo, int markId) {
+	auto bfs = [](int x, int y, bool key, int &markId) {
 		std::queue<int> q;
 		q.push(x);
 		q.push(y);
@@ -108,77 +155,77 @@ void split_block() {
 			for (auto d : dir) {
 				auto xx = x + d[0];
 				auto yy = y + d[1];
-				if (id[xx][yy] == 0 &&
-					((degree[xx][yy] == 2 && equalTwo) || 
-					(degree[xx][yy] > 2 && !equalTwo))) {
+				if (id[xx][yy] == -1 && !map_[xx][yy] &&
+					!(isKey[xx][yy] ^ key)) {
 					id[xx][yy] = markId;
 					q.push(xx);
 					q.push(yy);
 				}
 			}
 		}
+		markId ++;
 	};
 
 	// caculate id;
-	// [1, twoCount] stand for block that degree equal 2
+	// [0, twoCount) stand for block that degree equal 2
 	// [blockStart, twoCount+greaterTwoCount) stand for block that degree 
 	// greater than 2
 	for (auto i = 1; i <= height; i++) {
 		for (auto f = 1; f <= width; f++) {
-			if (id[i][f])
+			if (map_[i][f] || id[i][f] != -1)
 				continue;
 
-			switch (degree[i][f]) {
-				case 1:
-					id[i][f] = ++twoCount;
-					break;
-				case 2:
-					twoCount ++;
-					bfs(i, f, true, twoCount);
-					break;
+			if (isKey[i][f]) {
+				bfs(i, f, true, twoCount);
 			}
-		}
-	}
-	for (auto i = 1; i <= height; i++) {
-		for (auto f = 1; f <= width; f++) {
-			if (id[i][f])
-				continue;
-
-			if (degree[i][f] > 2) {
+			else {
 				bfs(i, f, false, greaterTwoCount);
-				greaterTwoCount++;
 			}
 		}
 	}
+
+	display_map(id);
 
 	/*
-		对degree为2的block如果连接到同一个id的，后期不方便处理，则认为它也是该id
+		对于keyblock如果连接到同一个id的，为了减少复杂度，则认为它也是该id
 		参见level1的左上右下
-		X...
+		XX..
 		....
 		...X
 	*/
-	auto find_nearby_ids = [](int x, int y) {
-		std::vector<int> ret;
-		for (auto d : dir) {
-			auto xx = x + d[0];
-			auto yy = y + d[1];
-			if (id[xx][yy])
-				ret.push_back(id[xx][yy]);
-		}
-		return ret;
-	};
+	std::map<int, int> nearby_ids;
 
 	for (auto i = 1; i <= height; i++) {
 		for (auto f = 1; f <= width; f++) {
-			if (degree[i][f] == 2) {
-				auto ids = find_nearby_ids(i, f);
-				assert(ids.size() == 2);
-				if (ids[0] == ids[1])
-					id[i][f] = ids[0];
+			auto keyId = id[i][f];
+
+			if (isKey[i][f]) {
+				for (auto d : dir) {
+					auto xx = i + d[0];
+					auto yy = f + d[1];
+					auto blockId = id[xx][yy];
+					if (blockId >= blockStart) {
+						if (nearby_ids[keyId] == 0) {
+							nearby_ids[keyId] = blockId;
+						}
+						else if (nearby_ids[keyId] != blockId) {
+							nearby_ids[keyId] = -1;
+						}
+					}
+				}
 			}
 		}
 	}
+
+	for (auto i = 0; i < twoCount; i++) {
+		if (nearby_ids[i] != -1) {
+			for (auto x = 1; x <= height; x++)
+				for (auto y = 1; y <= width; y++)
+					if (id[x][y] == i)
+						id[x][y] = nearby_ids[i];
+		}
+	}
+	display_map(id);
 }
 
 enum SolutionType {
@@ -324,14 +371,14 @@ void find_block_solution() {
 		for (auto f = 1; f <= width; f++) {
 			//预处理出所有的合法入口，与块内所有点
 			auto blockId = id[i][f];
-			if (blockId) {
+			if (blockId != -1) {
 				points[blockId].push_back(std::make_pair(i, f));
 				//枚举入口
 				for (auto d = 0; d < 4; d++) {
 					auto xx = i + dir[d][0];
 					auto yy = f + dir[d][1];
 					auto stepId = id[xx][yy];
-					if (stepId && stepId != blockId) {
+					if (stepId != -1 && stepId != blockId) {
 						entrys[stepId].push_back(std::make_tuple(xx, yy, d));
 					}
 				}
@@ -385,12 +432,14 @@ std::tuple<int, int, std::string> solve() {
 			if (!blockId || !needCheck[blockId])
 				continue;
 			needCheck[blockId] = true;
+			/*
 			if (degree[i][f] == 2) {
 				dfs();
 			}
 			else if (degree[i][f] > 2) {
 				dfs();
 			}
+			*/
 		}
 	}
 
@@ -448,9 +497,8 @@ int main() {
 
 	split_block();
 	std::cout << "split block finish" << std::endl;
-	display_map(degree);
 	display_map(id);
-	std::cout << twoCount << " " << (greaterTwoCount - 0x700) << std::endl;
+	std::cout << twoCount << " " << (greaterTwoCount - blockStart) << std::endl;
 
 	find_block_solution();
 	auto solution = solve();
