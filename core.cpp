@@ -246,11 +246,12 @@ public:
 	std::map<std::tuple<int, int, int>, std::shared_ptr<partSolution>> next; // in 2 out, out 2 in;
 };
 
-std::map<int, partSolution> psSet;
+std::map<int, partSolution> psStart;
+std::map<int, partSolution> psPassby;
 std::map<int, std::list<std::pair<int, int>>> points;
 std::map<int, std::list<std::tuple<int, int, int>>> entrys;
 
-void block_solution_check(int blockId);
+void block_solution_check(int blockId, bool start);
 
 int solutionC = 0;
 
@@ -325,6 +326,7 @@ void find_block_solution() {
 					auto p = s.rbegin();
 					p->ds.push_back(nd);
 
+
 					if (id[xx][yy] == blockId) { // 块内行走
 						dfs(blockId, xx, yy, nd, ps, total);
 					}
@@ -341,11 +343,20 @@ void find_block_solution() {
 							continue;
 						}
 
+						map_[xx][yy] = 1;
 						for (auto i : entrys[blockId]) {
 							//新增path，开始新的一段路径
 							auto ix = std::get<0>(i);
 							auto iy = std::get<1>(i);
 							auto id = std::get<2>(i);
+
+							auto fromX = ix - dir[id][0];
+							auto fromY = iy - dir[id][1];
+							if (map_[fromX][fromY]) {
+								continue;
+							}
+							map_[fromX][fromY] = 1;
+
 							s.push_back(partSolution::path(ix, iy, id));
 
 							auto pIn = getProxy(*pOut, i);
@@ -355,7 +366,9 @@ void find_block_solution() {
 							setProxy(*pOut, i, pIn);
 
 							s.pop_back();
+							map_[fromX][fromY] = 0;
 						}
+						map_[xx][yy] = 0;
 
 						setProxy(ps, outKey, pOut);
 					}
@@ -394,28 +407,48 @@ void find_block_solution() {
 		for (auto p : points[blockId]) {
 			auto x = p.first;
 			auto y = p.second;
-			std::cout << "now at " << x << " " << y << std::endl;
+			//std::cout << "now at " << x << " " << y << std::endl;
 
 			for (auto d = 0; d < 4; d++) {
 				auto xx = x + dir[d][0];
 				auto yy = y + dir[d][1];
-				//第一步就撞墙，跳过。
-				if (map_[xx][yy])
-					continue;
 
-				s.clear();
-				s.push_back(partSolution::path(x, y, d));
-				auto &root = psSet[blockId];
-				auto inKey = std::make_tuple(x, y, d);
-				auto pIn = getProxy(root, inKey);
-				dfs(blockId, x, y, d, *pIn, 0);
-				setProxy(root, inKey, pIn);
+				//内部出发
+				//第一步就撞墙，跳过。
+				if (!map_[xx][yy])
+				{
+					s.clear();
+					s.push_back(partSolution::path(x, y, d));
+					auto &root = psStart[blockId];
+					auto inKey = std::make_tuple(x, y, d);
+					auto pIn = getProxy(root, inKey);
+					dfs(blockId, x, y, d, *pIn, 0);
+					setProxy(root, inKey, pIn);
+				}
+
+				//外部进入
+				auto fromX = x - dir[d][0];
+				auto fromY = y - dir[d][1];
+				if (!map_[fromX][fromY] && (id[fromX][fromY] != blockId))
+				{
+					//std::cout << "start dfs out" << std::endl;
+					map_[fromX][fromY] = 1;
+					s.clear();
+					s.push_back(partSolution::path(x, y, d));
+					auto &root = psPassby[blockId];
+					auto inKey = std::make_tuple(x, y, d);
+					auto pIn = getProxy(root, inKey);
+					dfs(blockId, x, y, d, *pIn, 0);
+					setProxy(root, inKey, pIn);
+					map_[fromX][fromY] = 0;
+				}
 			}
 			std::cout << "solution = " << solutionC << std::endl;
 			solutionC = 0;
 		}
 
-		block_solution_check(blockId);
+		block_solution_check(blockId, true);
+		block_solution_check(blockId, false);
 	}
 }
 
@@ -446,7 +479,7 @@ std::tuple<int, int, std::string> solve() {
 	return std::make_tuple(0, 0, "");
 }
 
-void block_solution_check(int blockId) {
+void block_solution_check(int blockId, bool start) {
 	auto display_solution = [](std::list<partSolution::path> s, bool in) {
 		std::cout << "find one solution in: " << in << std::endl;
 		for (auto ss : s) {
@@ -480,8 +513,9 @@ void block_solution_check(int blockId) {
 		}
 	};
 
-	std::cout << "check block id = " << blockId << " root nextFinish " << psSet[blockId].nextFinish << std::endl;
-	dfs(psSet[blockId], false);
+	auto &ps = start ? psStart[blockId] : psPassby[blockId];
+	std::cout << "check block id = " << blockId << (start ? " start" : " passBy") << " nextFinish = " << ps.nextFinish << std::endl;
+	dfs(ps, false);
 	std::cout << "total solution count " << solutionCount << std::endl;
 }
 
